@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, ttk, colorchooser
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 
 class WatermarkApp:
@@ -13,6 +13,7 @@ class WatermarkApp:
         self.watermark_text = tk.StringVar()  # 워터마크 텍스트를 저장할 변수
         self.watermark_position = tk.StringVar(value="Center")  # 워터마크 위치 초기값 설정
         self.watermark_opacity = tk.DoubleVar(value=1.0)  # 워터마크 투명도 초기값 설정
+        self.watermark_color = "#FFFFFF"  # 워터마크 텍스트 색상 (기본값: 흰색)
 
         self.setup_ui()  # UI 구성
 
@@ -29,6 +30,9 @@ class WatermarkApp:
 
         # 워터마크 적용 버튼
         tk.Button(top_frame, text="Apply Watermark", command=self.apply_watermark).grid(row=0, column=2, padx=5)
+
+        # 워터마크 색상 선택 버튼
+        tk.Button(top_frame, text="Select Color", command=self.choose_color).grid(row=0, column=3, padx=5)
 
         # 워터마크 위치 선택 드롭다운 메뉴
         position_label = tk.Label(self.root, text="Position:")
@@ -54,7 +58,7 @@ class WatermarkApp:
         # 파일 다이얼로그를 열어 이미지를 선택하는 함수
         file_path = filedialog.askopenfilename(filetypes=[("Image Files", "*.jpg;*.png;*.jpeg")])
         if file_path:
-            self.current_image = Image.open(file_path)  # Pillow로 이미지 열기
+            self.current_image = Image.open(file_path).convert("RGBA")  # RGBA 모드로 변환 (투명도 지원)
             self.display_image(self.current_image)  # 이미지를 캔버스에 표시
 
     def display_image(self, img):
@@ -67,21 +71,38 @@ class WatermarkApp:
     def apply_watermark(self):
         # 업로드된 이미지에 워터마크를 추가하는 함수
         if self.current_image:
-            draw = ImageDraw.Draw(self.current_image)  # 이미지를 그릴 수 있는 객체 생성
+            # 워터마크 텍스트와 폰트 설정
             text = self.watermark_text.get()  # 입력된 워터마크 텍스트 가져오기
-            font = ImageFont.truetype("arial.ttf", 20)  # 워터마크에 사용할 폰트 설정
+            font = ImageFont.truetype("arial.ttf", 30)  # 워터마크에 사용할 폰트 설정
+            draw = ImageDraw.Draw(self.current_image)  # 이미지를 그릴 수 있는 객체 생성
+
+            # 워터마크 크기 계산
+            bbox = draw.textbbox((0, 0), text, font=font)  # 텍스트 경계 계산
+            text_width, text_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
 
             # 워터마크 위치 계산
             width, height = self.current_image.size  # 이미지 크기 가져오기
             position = {
                 "Top Left": (10, 10),  # 좌상단
-                "Center": (width // 2, height // 2),  # 중앙
-                "Bottom Right": (width - 100, height - 30)  # 우하단
+                "Center": ((width - text_width) // 2, (height - text_height) // 2),  # 중앙
+                "Bottom Right": (width - text_width - 10, height - text_height - 10)  # 우하단
             }[self.watermark_position.get()]
 
-            # 워터마크 텍스트 그리기
-            draw.text(position, text, fill="white", font=font)
-            self.display_image(self.current_image)  # 변경된 이미지를 캔버스에 다시 표시
+            # 투명도 적용 (텍스트와 배경 혼합)
+            overlay = Image.new("RGBA", self.current_image.size, (255, 255, 255, 0))
+            draw_overlay = ImageDraw.Draw(overlay)
+            draw_overlay.text(position, text, font=font,
+                              fill=self.watermark_color + f"{int(self.watermark_opacity.get() * 255):02x}")
+            self.current_image = Image.alpha_composite(self.current_image, overlay)
+
+            # 변경된 이미지를 미리보기로 표시
+            self.display_image(self.current_image)
+
+    def choose_color(self):
+        # 색상 선택 다이얼로그를 열어 사용자가 색상을 선택하도록 함
+        color_code = colorchooser.askcolor(title="Choose Text Color")[1]
+        if color_code:
+            self.watermark_color = color_code  # 선택된 색상 저장
 
     def save_image(self):
         # 워터마크가 추가된 이미지를 저장하는 함수
